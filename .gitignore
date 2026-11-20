@@ -1,0 +1,16 @@
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*
+frontend/*.tsbuildinfo
+
+# .NET / C#
+backend/bin/
+backend/obj/
+backend/appsettings.Development.json
+
+# OS / IDE / Logs
+.DS_Store
+Thumbs.db
+*.log
