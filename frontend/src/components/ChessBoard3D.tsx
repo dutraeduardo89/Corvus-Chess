@@ -385,35 +385,60 @@ export default function ChessBoard3D() {
     };
     updateHighlightsRef.current = updateHighlights;
 
+    let requestRender = () => {};
+    const pieceMeshesBySquare = new Map<string, THREE.Group>();
+
     const syncPiecesFromBoard = () => {
-      piecesGroup.clear();
       const board = chessRef.current.board();
       const selSq = selectedSquareRef.current;
+      const activeKeys = new Set<string>();
 
       for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
           const piece = board[row][col];
           if (!piece) continue;
 
-          const tpl = templates.get(piece.color + piece.type);
-          if (!tpl) continue;
-
           const sqName = coordsToSquare(col, row);
+          const key = sqName + ":" + piece.color + piece.type;
+          activeKeys.add(key);
           const isSelected = sqName === selSq;
 
-          const p = tpl.clone();
+          let p: THREE.Group | undefined = pieceMeshesBySquare.get(key);
+          if (!p) {
+            const tpl = templates.get(piece.color + piece.type);
+            if (!tpl) continue;
+
+            p = tpl.clone() as THREE.Group;
+            p.rotation.y = piece.color === 'b' ? 0 : Math.PI;
+
+            const shadowPlane = new THREE.Mesh(shadowGeo, contactShadowMat);
+            shadowPlane.rotation.x = -Math.PI / 2;
+            shadowPlane.position.y = 0.004;
+            p.add(shadowPlane);
+
+            p.traverse((obj) => {
+              obj.userData.square = sqName;
+            });
+
+            pieceMeshesBySquare.set(key, p);
+            piecesGroup.add(p);
+          }
+
+          if (!p) continue;
+          if (!p) continue;
           p.position.set(col - 3.5, isSelected ? 0.25 : 0, row - 3.5);
-          p.rotation.y = piece.color === 'b' ? 0 : Math.PI;
           p.scale.setScalar(isSelected ? 1.08 : 1);
-
-          const shadowPlane = new THREE.Mesh(shadowGeo, contactShadowMat);
-          shadowPlane.rotation.x = -Math.PI / 2;
-          shadowPlane.position.y = 0.004;
-          p.add(shadowPlane);
-
-          piecesGroup.add(p);
         }
       }
+
+      for (const [key, mesh] of pieceMeshesBySquare.entries()) {
+        if (!activeKeys.has(key)) {
+          piecesGroup.remove(mesh);
+          pieceMeshesBySquare.delete(key);
+        }
+      }
+
+      requestRender();
     };
     syncPiecesRef.current = syncPiecesFromBoard;
     syncPiecesFromBoard();
@@ -433,14 +458,14 @@ export default function ChessBoard3D() {
         return squareHits[0].object.userData.square as Square;
       }
 
-      // Fallback caso clique no topo alto de uma peça fora da projeção vertical da casa
       const pieceHits = raycaster.intersectObjects(piecesGroup.children, true);
       if (pieceHits.length > 0) {
-        const pt = pieceHits[0].point;
-        const col = Math.floor(pt.x + 4);
-        const row = Math.floor(pt.z + 4);
-        if (col >= 0 && col < 8 && row >= 0 && row < 8) {
-          return coordsToSquare(col, row);
+        let obj: THREE.Object3D | null = pieceHits[0].object;
+        while (obj) {
+          if (obj.userData?.square) {
+            return obj.userData.square as Square;
+          }
+          obj = obj.parent;
         }
       }
 
@@ -534,11 +559,24 @@ export default function ChessBoard3D() {
     };
     window.addEventListener('resize', onResize);
 
+    let needsRender = true;
     let animId = 0;
+    requestRender = () => {
+      needsRender = true;
+    };
+
+    const onControlsChange = () => {
+      needsRender = true;
+    };
+    controls.addEventListener('change', onControlsChange);
+
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
+      const dampingActive = controls.update();
+      if (needsRender || dampingActive) {
+        renderer.render(scene, camera);
+        needsRender = false;
+      }
     };
     animate();
 
